@@ -1,118 +1,130 @@
-
 Async = (function() {
-	'use strict';
-	
-	var 
-	flux = 0,
-	Async = function(formElement, config) {
-		var config = config || Async.debugConfig,
-			fileElement = findInputElement('file'),
-			self = this,
-			submitElement = findInputElement('submit');
-			
-		addEventListener(fileElement, 'change', config.changed);
-		addEventListener(formElement, 'submit', function(event) {
-			event.preventDefault();
-			console.log('submitting form');
-			postForm();
-		});
-		
-		function findInputElement(elementType) {
-			return findElement(formElement, 'input', function(element) {
-				return element.getAttribute('type') === elementType;
-			});
-		}
-		
-		function postForm() {
-			var hiddenFrame = document.createElement('iframe'),
-				iframeId = generateUid('iframe'),
-				previousTarget = formElement.getAttribute('target');
-				
-			config.started(formElement);
-			
-			hiddenFrame.id = iframeId;
-			hiddenFrame.name = iframeId;
-			document.body.appendChild(hiddenFrame);			
-			formElement.setAttribute('target', iframeId);
-			hiddenFrame.onload = function() {
-				config.completed(this.contentWindow.document.body);
-				//formElement.setAttribute('target', previousTarget);
-			};
-			
-			HTMLFormElement.prototype.submit.call(formElement);		}			
+    'use strict';
 
-		this.form = formElement;
-	};
-	
-	Async.Config = function(cancelled, changed, completed, started) {
-		this.cancelled	= cancelled	|| ignore;
-		this.changed	= changed	|| ignore;
-		this.completed	= function(iframe) { document.removeChild(iframe); return completed || ignore };
-		this.started	= started	|| ignore;
-	}
-		
-	Async.debugConfig = new Async.Config(
-		log('submit cancelled'),
-		log('file changed'),
-		log('submit completed'),
-		log('submit stared'));
-	
-	Async.defaultConfig = new Async.Config;
-	
-	Async.prototype.deregister = function() {
-		var submitElement = findSubmitElement(this.form);
-		
-		removeEventListener(submitElement, 'change');
-		throw new Error('unregister not implemented yet');
-	};
-	
-	return Async;
-	
-	/* helper functions
-	 */
-	function addEventListener(element, event, action) {
-		if (element.addEventListener) {
-			element.addEventListener(event, action, false);
-		} else {
-			element.attachEvent(event, action);
-		}
-		
-		return element;
-	}
-		
-	function findElement(parentElement, elementType, predicate) {
-		var i, inputElements = parentElement.getElementsByTagName(elementType);
-		
-		for (i = 0; i < inputElements.length; i++) {
-			if (predicate(inputElements[i]))
-				return inputElements[i];
-		}
-	}
-	
-	function generateUid(prefix) {
-		return [prefix, (new Date).getTime(), flux++].join('-');
-	}
-		
-	function ignore() {}
-		
-	function log(message) {
-		return function() {
-			console.log(message);
-		}
-	}
-		
-	function removeEventListener(element, event, action) {
-		if (element.removeEventListener) {
-			element.removeEventListener(event, action, false);
-		} else {
-			element.detachEvent(event, action);
-		}
-		
-		return element;
-	}
+    var defaultConfig = {
+        cancelled   : ignore,
+        changed     : ignore,
+        completed   : ignore,
+        started     : ignore
+    },
+        flux = 0,
+        Async = function(formElement, config) {
+            var preppedConfig = fallback(config, defaultConfig),
+                fileElement = findInputElements('file')[0],
+                submitElement = findInputElements('submit')[0];
+    
+            addEventListener(fileElement, 'change', preppedConfig.changed);
+            addEventListener(formElement, 'submit', function(event) {
+                preppedConfig.started(formElement);
+                event.preventDefault();
+                postForm();
+            });
+    
+            function findInputElements(elementType) {
+                return findChilds(formElement, 'input', function(element) {
+                    return element.type === elementType;
+                });
+            }
+    
+            function postForm() {
+                var hiddenFrame = document.createElement('iframe'),
+                    iframeId = generateUid('iframe'),
+                    previousTarget = formElement.target,
+                    submit = formElement.submit;
+    
+                hiddenFrame.id = iframeId;
+                hiddenFrame.name = iframeId;
+                hiddenFrame.style.display = 'none';
+                document.body.appendChild(hiddenFrame);
+                formElement.target = iframeId;
+                hiddenFrame.onload = function() {
+                    formElement.target = previousTarget;
+                    preppedConfig.completed(this.contentDocument.body.innerText);
+                    this.parentNode.removeChild(this);
+                };
+                
+                delete formElement.submit;
+                formElement.submit();
+                formElement.submit = submit;
+            }
+    
+            this.form = formElement;
+        };
+
+    Async.debugConfig = {
+        cancelled   : log('submit cancelled'),
+        changed     : log('file changed'),
+        completed   : log('submit completed'),
+        started     : log('submit started')
+    };
+
+    Async.prototype.deregister = function() {
+        var submitElement = findSubmitElement(this.form);
+
+        removeEventListener(submitElement, 'change');
+        throw new Error('unregister not implemented yet');
+    };
+
+    return Async;
+
+    /* helper functions
+     */
+    function addEventListener(element, event, action) {
+        if (element.addEventListener) {
+            element.addEventListener(event, action, false);
+        } else {
+            element.attachEvent(event, action);
+        }
+
+        return element;
+    }
+
+    function fallback(object, templateObject) {
+        var res = {};
+
+        for (var item in templateObject)
+        if (templateObject.hasOwnProperty(item)) {
+            res[item] = object[item] || templateObject[item];
+        }
+
+        return res;
+    }
+
+    function findChilds(parentElement, elementType, predicate) {
+        var i,
+            inputElements = parentElement.getElementsByTagName(elementType),
+            res = [];
+
+        for (i = 0; i < inputElements.length; i++) {
+            if (predicate(inputElements[i])) {
+                res.push(inputElements[i]);
+            }
+        }
+
+        return res;
+    }
+
+    function generateUid(prefix) {
+        return [prefix, (new Date).getTime(), flux++].join('-');
+    }
+
+    function ignore() {}
+
+    function log(message) {
+        return function() {
+            console.log(message);
+        }
+    }
+
+    function removeEventListener(element, event, action) {
+        if (element.removeEventListener) {
+            element.removeEventListener(event, action, false);
+        } else {
+            element.detachEvent(event, action);
+        }
+
+        return element;
+    }
+    
 }());
-
-
-
-
 
